@@ -104,7 +104,19 @@ class SshTunnel
         return $this->cached[$file]['localPort'];
     }
 
-    protected function loadCached(string $host, int $port)
+    public function bootCached(): array
+    {
+        if (!$this->cached) {
+            foreach ($this->database as $databaseKey => $connections) {
+                foreach ($connections as $connection => $tunnel) {
+                    $this->loadCached(...$this->arguments($databaseKey, $connection));
+                }
+            }
+        }
+        return $this->cached;
+    }
+
+    protected function loadCached(string $host, int $port): bool
     {
         $file = $this->directory() . $this->filename($host, $port);
 
@@ -206,13 +218,6 @@ class SshTunnel
 
     public function list(): array
     {
-        if (!$this->cached) {
-            foreach ($this->database as $databaseKey => $connections) {
-                foreach ($connections as $connection => $tunnel) {
-                    $this->loadCached(...$this->arguments($databaseKey, $connection));
-                }
-            }
-        }
-        return $this->cached;
+        return $this->bootCached();
     }
 }

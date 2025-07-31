@@ -30,9 +30,6 @@ class SshTunnelServiceProvider extends ServiceProvider
 
     protected function registerSshTunnel()
     {
-        if (!$this->app->runningInConsole()) {
-            return;
-        }
         if (!($config = config('ssh-tunnel', []))) {
             return;
         }
@@ -42,5 +39,6 @@ class SshTunnelServiceProvider extends ServiceProvider
         $this->app->singleton('ssh-tunnel', function () use ($config) {
             return new SshTunnel($config['bin'], $config['temporary'], $config['tunnel'], $config['database']);
         });
+        $this->app['ssh-tunnel']->bootCached();
     }
 }
