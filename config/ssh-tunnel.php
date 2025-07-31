@@ -5,6 +5,9 @@ use Illuminate\Support\Str;
 return [
     'enabled' => env('SSH_TUNNEL_ENABLED', false),
 
+    /**
+     * 支持多路径，以":"隔开
+     */
     'bin' => env('SSH_TUNNEL_BIN', 'autossh'),
 
     'database' => [

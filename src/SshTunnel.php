@@ -7,6 +7,8 @@ use Symfony\Component\Process\Process;
 
 class SshTunnel
 {
+    protected $bins;
+
     protected $bin;
 
     protected $temporary = [];
@@ -31,10 +33,24 @@ class SshTunnel
 
     public function __construct(string $bin, array $temporary, array $tunnels, array $database)
     {
-        $this->bin = $bin;
+        $this->bins = $bin;
         $this->temporary = $temporary;
         $this->tunnels = $tunnels;
         $this->database = $database;
+        $this->whichBin();
+    }
+
+    protected function whichBin()
+    {
+        $bins = explode(':', $this->bins);
+        foreach ($bins as $bin) {
+            exec("which {$this->bin}", $output, $returnVar);
+            if ($returnVar === 0 && !empty($output[0]) && file_exists($output[0])) {
+                $this->bin = $bin;
+                break;
+            }
+        }
+        throw  new RuntimeException('autossh not exists');
     }
 
     protected function directory(): string
