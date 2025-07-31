@@ -99,24 +99,22 @@ class SshTunnel
         return sprintf('%s -M 0 -f -C -N -L', $this->bin);
     }
 
-    protected function cachedLocalPort($file): int
-    {
-        return $this->cached[$file]['localPort'];
-    }
-
     public function bootCached(): array
     {
         if (!$this->cached) {
             foreach ($this->database as $databaseKey => $connections) {
                 foreach ($connections as $connection => $tunnel) {
-                    $this->loadCached(...$this->arguments($databaseKey, $connection));
+                    [$host, $port] = $this->arguments($databaseKey, $connection);
+                    if ($this->hasCached($host, $port)) {
+                        $this->update($databaseKey, $connection, $this->cachedLocalPort($host, $port));
+                    }
                 }
             }
         }
         return $this->cached;
     }
 
-    protected function loadCached(string $host, int $port): bool
+    protected function hasCached(string $host, int $port): bool
     {
         $file = $this->directory() . $this->filename($host, $port);
 
@@ -133,13 +131,19 @@ class SshTunnel
         return true;
     }
 
-    protected function connect(string $tunnelConnection, string $host, int $port): int
+    protected function cachedLocalPort(string $host, int $port): int
     {
         $file = $this->directory() . $this->filename($host, $port);
+        return $this->cached[$file]['localPort'];
+    }
 
-        if ($this->loadCached($host, $port)) {
-            return $this->cachedLocalPort($file);
+    protected function connect(string $tunnelConnection, string $host, int $port): int
+    {
+        if ($this->hasCached($host, $port)) {
+            return $this->cachedLocalPort($host, $port);
         }
+
+        $file = $this->directory() . $this->filename($host, $port);
 
         if (!($localPort = $this->localPort())) {
             throw new RuntimeException("available port not found");
