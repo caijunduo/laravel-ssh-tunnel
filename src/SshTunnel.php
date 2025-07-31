@@ -44,7 +44,7 @@ class SshTunnel
         if (!$this->bin) {
             $bins = explode(':', $this->bins);
             foreach ($bins as $bin) {
-                exec("which {$this->bin}", $output, $returnVar);
+                exec("which $bin", $output, $returnVar);
                 if ($returnVar === 0 && !empty($output[0]) && file_exists($output[0])) {
                     $this->bin = $bin;
                     return $this->bin;
