@@ -191,8 +191,8 @@ class SshTunnel
 
     protected function update($databaseKey, $connection, $port)
     {
-        config("database.$databaseKey.$connection.host", '127.0.0.1');
-        config("database.$databaseKey.$connection.port", $port);
+        config(["database.$databaseKey.$connection.host" => '127.0.0.1']);
+        config(["database.$databaseKey.$connection.port" => $port]);
     }
 
     public function start()
