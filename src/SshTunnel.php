@@ -151,7 +151,6 @@ class SshTunnel
         }
 
         file_put_contents($file, json_encode(compact('host', 'port', 'localPort', 'tunnel'), JSON_UNESCAPED_UNICODE));
-        echo $commandLine . PHP_EOL;
 
         return $localPort;
     }
