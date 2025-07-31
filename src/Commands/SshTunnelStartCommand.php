@@ -12,6 +12,6 @@ class SshTunnelStartCommand extends Command
 
     public function handle()
     {
-
+        app('ssh-tunnel')->start();
     }
 }

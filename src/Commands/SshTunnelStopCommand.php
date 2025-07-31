@@ -12,6 +12,6 @@ class SshTunnelStopCommand extends Command
 
     public function handle()
     {
-
+        app('ssh-tunnel')->stop();
     }
 }

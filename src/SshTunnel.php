@@ -3,7 +3,6 @@
 namespace Caijunduo\LaravelSSHTunnel;
 
 use RuntimeException;
-use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
 class SshTunnel
@@ -14,11 +13,28 @@ class SshTunnel
 
     protected $tunnels = [];
 
-    public function __construct(string $bin, array $temporary, array $tunnels)
+    protected $database = [];
+
+    /**
+     * @var array{
+     *     host: string,
+     *     port: int,
+     *     localPort: int,
+     *     tunnel: array{
+     *         host: string,
+     *         user: string,
+     *         port: int,
+     *     }
+     * }
+     */
+    protected $cached = [];
+
+    public function __construct(string $bin, array $temporary, array $tunnels, array $database)
     {
         $this->bin = $bin;
         $this->temporary = $temporary;
         $this->tunnels = $tunnels;
+        $this->database = $database;
     }
 
     protected function directory(): string
@@ -35,19 +51,9 @@ class SshTunnel
         );
     }
 
-    protected function getCachePort($file): int
+    protected function pidname(string $file): string
     {
-        $ext = '.port';
-        if (!file_exists($file . $ext)) {
-            return 0;
-        }
-        return intval(file_get_contents($file . $ext));
-    }
-
-    protected function setCachePort(string $file, int $localPort)
-    {
-        $ext = '.port';
-        file_put_contents($file . $ext, $localPort);
+        return $file . '.pid';
     }
 
     protected function localPort(): int
@@ -78,12 +84,9 @@ class SshTunnel
         return intval($port);
     }
 
-    protected function tunnelLine(string $tunnel): string
+    protected function tunnelLine(array $tunnel): string
     {
-        if (!($config = $this->tunnels[$tunnel])) {
-            throw new RuntimeException("tunnel not exists: $tunnel");
-        }
-        return sprintf('%s@%s -p %d', $config['user'], $config['host'], intval($config['port']));
+        return sprintf('%s@%s -p %d', $tunnel['user'], $tunnel['host'], intval($tunnel['port']));
     }
 
     protected function connectionLine(string $host, int $port, int $localPort): string
@@ -96,20 +99,34 @@ class SshTunnel
         return sprintf('%s -M 0 -f -C -N -L', $this->bin);
     }
 
-    protected function getEnv(string $file): array
+    protected function cachedLocalPort($file): int
     {
-        return [
-            'AUTOSSH_PIDFILE' => $file . '.pid',
-            'AUTOSSH_LOGFILE' => $file . '.log',
-        ];
+        return $this->cached[$file]['localPort'];
     }
 
-    public function run(string $host, int $port, string $tunnel): int
+    protected function loadCached(string $host, int $port)
     {
         $file = $this->directory() . $this->filename($host, $port);
 
-        if ($localPort = $this->getCachePort($file)) {
-            return $localPort;
+        if (!isset($this->cached[$file])) {
+            if (!file_exists($file) || !file_exists($this->pidname($file))) {
+                @unlink($file);
+                @unlink($this->pidname($file));
+                return false;
+            }
+            $this->cached[$file] = json_decode(file_get_contents($file), true);
+            $this->cached[$file]['pid'] = intval(file_get_contents($this->pidname($file)));
+        }
+
+        return true;
+    }
+
+    protected function connect(string $tunnelConnection, string $host, int $port): int
+    {
+        $file = $this->directory() . $this->filename($host, $port);
+
+        if ($this->loadCached($host, $port)) {
+            return $this->cachedLocalPort($file);
         }
 
         if (!($localPort = $this->localPort())) {
@@ -118,15 +135,85 @@ class SshTunnel
 
         $commandPrefix = $this->commandPrefix();
         $connectionLine = $this->connectionLine($host, $port, $localPort);
+        if (!($tunnel = $this->tunnels[$tunnelConnection])) {
+            throw new RuntimeException("tunnel not exists: $tunnelConnection");
+        }
         $tunnelLine = $this->tunnelLine($tunnel);
         $commandLine = "$commandPrefix $connectionLine $tunnelLine";
 
-        exec($commandLine, $output, $exitCode);
-        if ($exitCode !== 0) {
-            throw new  RuntimeException("command failed: $commandLine");
+        $process = Process::fromShellCommandline($commandLine);
+        $process->setEnv([
+            'AUTOSSH_PIDFILE' => $file . '.pid',
+        ]);
+        $process->run();
+        if (!$process->isSuccessful()) {
+            throw new RuntimeException($process->getErrorOutput(), $process->getExitCode());
         }
 
-        $this->setCachePort($file, $localPort);
+        file_put_contents($file, json_encode(compact('host', 'port', 'localPort', 'tunnel'), JSON_UNESCAPED_UNICODE));
+        echo $commandLine . PHP_EOL;
+
         return $localPort;
+    }
+
+    protected function run($databaseKey, $connection, $tunnel)
+    {
+        $this->update($databaseKey, $connection,
+            $this->connect($tunnel, ...$this->arguments($databaseKey, $connection))
+        );
+    }
+
+    protected function arguments($databaseKey, $connection): array
+    {
+        if (!($host = config("database.$databaseKey.$connection.host"))) {
+            throw new RuntimeException("database.$databaseKey.$connection.host not found");
+        }
+        if (!($port = config("database.$databaseKey.$connection.port"))) {
+            throw new RuntimeException("database.$databaseKey.$connection.port not found");
+        }
+        return [$host, $port];
+    }
+
+    protected function update($databaseKey, $connection, $port)
+    {
+        config("database.$databaseKey.$connection.host", '127.0.0.1');
+        config("database.$databaseKey.$connection.port", $port);
+    }
+
+    public function start()
+    {
+        foreach ($this->database as $databaseKey => $connections) {
+            foreach ($connections as $connection => $tunnel) {
+                $this->run($databaseKey, $connection, $tunnel);
+            }
+        }
+    }
+
+    public function stop()
+    {
+        foreach ($this->list() as $file => $tunnel) {
+            $pid = intval(file_get_contents($file.'.pid'));
+            if ($pid) {
+                $process = Process::fromShellCommandline("kill -9 $pid");
+                $process->run();
+                if (!$process->isSuccessful()) {
+                    throw new RuntimeException($process->getErrorOutput(), $process->getExitCode());
+                }
+            }
+            file_exists($file) && unlink($file);
+            file_exists($file.'.pid') && unlink($file.'.pid');
+        }
+    }
+
+    public function list(): array
+    {
+        if (!$this->cached) {
+            foreach ($this->database as $databaseKey => $connections) {
+                foreach ($connections as $connection => $tunnel) {
+                    $this->loadCached(...$this->arguments($databaseKey, $connection));
+                }
+            }
+        }
+        return $this->cached;
     }
 }
