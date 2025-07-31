@@ -1,0 +1,24 @@
+{
+    "name": "caijunduo/laravel-ssh-tunnel",
+    "autoload": {
+        "psr-4": {
+            "Caijunduo\\LaravelSshTunnel\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "caijunduo",
+            "email": "caijunduo@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.4"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Caijunduo\\LaravelSSHTunnel\\SshTunnelServiceProvider"
+            ]
+        }
+    }
+}
