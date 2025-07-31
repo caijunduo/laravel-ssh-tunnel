@@ -37,20 +37,22 @@ class SshTunnel
         $this->temporary = $temporary;
         $this->tunnels = $tunnels;
         $this->database = $database;
-        $this->whichBin();
     }
 
-    protected function whichBin()
+    protected function bin()
     {
-        $bins = explode(':', $this->bins);
-        foreach ($bins as $bin) {
-            exec("which {$this->bin}", $output, $returnVar);
-            if ($returnVar === 0 && !empty($output[0]) && file_exists($output[0])) {
-                $this->bin = $bin;
-                break;
+        if (!$this->bin) {
+            $bins = explode(':', $this->bins);
+            foreach ($bins as $bin) {
+                exec("which {$this->bin}", $output, $returnVar);
+                if ($returnVar === 0 && !empty($output[0]) && file_exists($output[0])) {
+                    $this->bin = $bin;
+                    return $this->bin;
+                }
             }
+            throw  new RuntimeException('autossh not exists');
         }
-        throw  new RuntimeException('autossh not exists');
+        return $this->bin;
     }
 
     protected function directory(): string
@@ -112,7 +114,7 @@ class SshTunnel
 
     protected function commandPrefix(): string
     {
-        return sprintf('%s -M 0 -f -C -N -L', $this->bin);
+        return sprintf('%s -M 0 -f -C -N -L', $this->bin());
     }
 
     public function bootCached(): array
